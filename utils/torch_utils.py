@@ -1,10 +1,7 @@
-# PyTorch utils
-
 import logging
 import math
 import os
 import time
-from contextlib import contextmanager
 from copy import deepcopy
 
 import torch
@@ -13,28 +10,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 
-try:
-    import thop  # for FLOPS computation
-except ImportError:
-    thop = None
 logger = logging.getLogger(__name__)
 
 
-@contextmanager
-def torch_distributed_zero_first(local_rank: int):
-    """
-    Decorator to make all processes in distributed training wait for each local_master to do something.
-    """
-    if local_rank not in [-1, 0]:
-        torch.distributed.barrier()
-    yield
-    if local_rank == 0:
-        torch.distributed.barrier()
-
-
 def init_torch_seeds(seed=0):
-    # Speed-reproducibility tradeoff https://pytorch.org/docs/stable/notes/randomness.html
     torch.manual_seed(seed)
+
+    # Speed-reproducibility tradeoff https://pytorch.org/docs/stable/notes/randomness.html
     if seed == 0:  # slower, more reproducible
         cudnn.deterministic = True
         cudnn.benchmark = False
@@ -44,7 +26,11 @@ def init_torch_seeds(seed=0):
 
 
 def select_device(device='', batch_size=None):
-    # device = 'cpu' or '0' or '0,1,2,3'
+    '''
+    device = 'cpu' or '0' or '0,1,2,3'
+    return ：
+        torch.device('cuda:0' if cuda else 'cpu')
+    '''
     cpu_request = device.lower() == 'cpu'
     if device and not cpu_request:  # if device requested other than 'cpu'
         os.environ['CUDA_VISIBLE_DEVICES'] = device  # set environment variable
@@ -57,61 +43,22 @@ def select_device(device='', batch_size=None):
         if ng > 1 and batch_size:  # check that batch_size is compatible with device_count
             assert batch_size % ng == 0, 'batch-size %g not multiple of GPU count %g' % (batch_size, ng)
         x = [torch.cuda.get_device_properties(i) for i in range(ng)]
-        s = f'Using torch {torch.__version__} '
+        s = 'Using CUDA '
         for i in range(0, ng):
             if i == 1:
                 s = ' ' * len(s)
-            logger.info("%sCUDA:%g (%s, %dMB)" % (s, i, x[i].name, x[i].total_memory / c))
+            logger.info("%sdevice%g _CudaDeviceProperties(name='%s', total_memory=%dMB)" %
+                        (s, i, x[i].name, x[i].total_memory / c))
     else:
-        logger.info(f'Using torch {torch.__version__} CPU')
+        logger.info('Using CPU')
 
     logger.info('')  # skip a line
     return torch.device('cuda:0' if cuda else 'cpu')
 
 
 def time_synchronized():
-    # pytorch-accurate time
     torch.cuda.synchronize() if torch.cuda.is_available() else None
     return time.time()
-
-
-def profile(x, ops, n=100, device=None):
-    # profile a pytorch module or list of modules. Example usage:
-    #     x = torch.randn(16, 3, 640, 640)  # input
-    #     m1 = lambda x: x * torch.sigmoid(x)
-    #     m2 = nn.SiLU()
-    #     profile(x, [m1, m2], n=100)  # profile speed over 100 iterations
-
-    device = device or torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    x = x.to(device)
-    x.requires_grad = True
-    print(torch.__version__, device.type, torch.cuda.get_device_properties(0) if device.type == 'cuda' else '')
-    print(f"\n{'Params':>12s}{'GFLOPS':>12s}{'forward (ms)':>16s}{'backward (ms)':>16s}{'input':>24s}{'output':>24s}")
-    for m in ops if isinstance(ops, list) else [ops]:
-        m = m.to(device) if hasattr(m, 'to') else m  # device
-        m = m.half() if hasattr(m, 'half') and isinstance(x, torch.Tensor) and x.dtype is torch.float16 else m  # type
-        dtf, dtb, t = 0., 0., [0., 0., 0.]  # dt forward, backward
-        try:
-            flops = thop.profile(m, inputs=(x,), verbose=False)[0] / 1E9 * 2  # GFLOPS
-        except:
-            flops = 0
-
-        for _ in range(n):
-            t[0] = time_synchronized()
-            y = m(x)
-            t[1] = time_synchronized()
-            try:
-                _ = y.sum().backward()
-                t[2] = time_synchronized()
-            except:  # no backward method
-                t[2] = float('nan')
-            dtf += (t[1] - t[0]) * 1000 / n  # ms per op forward
-            dtb += (t[2] - t[1]) * 1000 / n  # ms per op backward
-
-        s_in = tuple(x.shape) if isinstance(x, torch.Tensor) else 'list'
-        s_out = tuple(y.shape) if isinstance(y, torch.Tensor) else 'list'
-        p = sum(list(x.numel() for x in m.parameters())) if isinstance(m, nn.Module) else 0  # parameters
-        print(f'{p:12.4g}{flops:12.4g}{dtf:16.4g}{dtb:16.4g}{str(s_in):>24s}{str(s_out):>24s}')
 
 
 def is_parallel(model):
@@ -119,11 +66,17 @@ def is_parallel(model):
 
 
 def intersect_dicts(da, db, exclude=()):
-    # Dictionary intersection of matching keys and shapes, omitting 'exclude' keys, using da values
+    '''
+    匹配keys和shapes的dicts交集，省略“exclude”键，采用da值
+    Dictionary intersection of matching keys and shapes, omitting 'exclude' keys, using da values
+    '''
     return {k: v for k, v in da.items() if k in db and not any(x in k for x in exclude) and v.shape == db[k].shape}
 
 
 def initialize_weights(model):
+    '''
+    初始化model模型中的所有层中使用到的权重与相关参数
+    '''
     for m in model.modules():
         t = type(m)
         if t is nn.Conv2d:
@@ -131,7 +84,7 @@ def initialize_weights(model):
         elif t is nn.BatchNorm2d:
             m.eps = 1e-3
             m.momentum = 0.03
-        elif t in [nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6]:
+        elif t in [nn.LeakyReLU, nn.ReLU, nn.ReLU6]:
             m.inplace = True
 
 
@@ -162,6 +115,8 @@ def prune(model, amount=0.3):
 
 def fuse_conv_and_bn(conv, bn):
     # Fuse convolution and batchnorm layers https://tehnokv.com/posts/fusing-batchnorm-and-conv/
+
+    # init
     fusedconv = nn.Conv2d(conv.in_channels,
                           conv.out_channels,
                           kernel_size=conv.kernel_size,
@@ -183,8 +138,8 @@ def fuse_conv_and_bn(conv, bn):
     return fusedconv
 
 
-def model_info(model, verbose=False, img_size=640):
-    # Model information. img_size may be int or list, i.e. img_size=640 or img_size=[640, 320]
+def model_info(model, verbose=False):
+    # Plots a line-by-line description of a PyTorch model
     n_p = sum(x.numel() for x in model.parameters())  # number parameters
     n_g = sum(x.numel() for x in model.parameters() if x.requires_grad)  # number gradients
     if verbose:
@@ -196,15 +151,13 @@ def model_info(model, verbose=False, img_size=640):
 
     try:  # FLOPS
         from thop import profile
-        stride = int(model.stride.max()) if hasattr(model, 'stride') else 32
-        img = torch.zeros((1, model.yaml.get('ch', 3), stride, stride), device=next(model.parameters()).device)  # input
-        flops = profile(deepcopy(model), inputs=(img,), verbose=False)[0] / 1E9 * 2  # stride GFLOPS
-        img_size = img_size if isinstance(img_size, list) else [img_size, img_size]  # expand if int/float
-        fs = ', %.1f GFLOPS' % (flops * img_size[0] / stride * img_size[1] / stride)  # 640x640 GFLOPS
-    except (ImportError, Exception):
+        flops = profile(deepcopy(model), inputs=(torch.zeros(1, 3, 64, 64),), verbose=False)[0] / 1E9 * 2
+        fs = ', %.1f GFLOPS' % (flops * 100)  # 640x640 FLOPS
+    except:
         fs = ''
 
-    logger.info(f"Model Summary: {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
+    logger.info(
+        'Model Summary: %g layers, %g parameters, %g gradients%s' % (len(list(model.parameters())), n_p, n_g, fs))
 
 
 def load_classifier(name='resnet101', n=2):

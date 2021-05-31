@@ -49,7 +49,6 @@ sdist/
 var/
 wheels/
 *.egg-info/
-wandb/
 .installed.cfg
 *.egg
 
