@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from shapely.geometry import Polygon
-from math import fabs, sqrt
+from math import sqrt
 
 
 test_path = 'DOTA_demo_view/detection/result_txt/result_before_merge/'
