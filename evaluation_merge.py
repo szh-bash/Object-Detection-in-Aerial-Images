@@ -4,7 +4,8 @@ from shapely.geometry import Polygon
 from math import sqrt
 import matplotlib.pyplot as plt
 
-test_path = 'DOTA_demo_view/detection/result_txt/result_before_merge/'
+test_path_0 = 'DOTA_demo_view/detection/result_txt/result_before_merge/'
+test_path_1 = 'DOTA_demo_view/effnet/'
 label_path = 'DOTA_demo_view/labelTxt/'
 iou_ap_thresh = 0.5
 iou_nms_thresh = 0.05
@@ -80,14 +81,15 @@ def bad_label(_name, _data):
     return 0
 
 
-if __name__ == "__main__":
-    path_dir = os.listdir(test_path)
+def get_ap_roc(result_path, gt_path):
+    print('Test Path: %s' % result_path)
+    path_dir = os.listdir(result_path)
     gt = {}
     pred = {}
     gt_total = 0
     pred_total = 0
     for file in path_dir:
-        f = open(test_path+file)
+        f = open(result_path+file)
         st = f.readline().split(' ')
         name = file.split('.')[0]
         pred[name] = []
@@ -103,8 +105,7 @@ if __name__ == "__main__":
     path_dir = os.listdir(label_path)
     flag = []
     for file in path_dir:
-        # file = '7__1__512___0.txt'
-        f = open(label_path+file)
+        f = open(gt_path+file)
         st = f.readline().split(' ')
         name = file.split('.')[0].split('_')
         dx = float(name[-4])
@@ -124,7 +125,7 @@ if __name__ == "__main__":
             gt[name].append(data)
             st = f.readline().split(' ')
         if name == '1339':
-            # add plane
+            # add label
             gt[name].append([370., 748., 348., 714., 387., 689., 409., 723., gt_total, 300])
             gt_total += 1
             flag.append(0)
@@ -196,20 +197,27 @@ if __name__ == "__main__":
     print('Oriented Bounding Boxes: %d' % q.shape[0])
     print('Ground-Truth Total: %d' % gt_total)
     print('Lowest TP-Conf: %.5f' % conf_min)
+    return roc
 
-    # plotting roc-curve
-    roc = np.array(roc, dtype=np.float64)
+
+if __name__ == "__main__":
+    roc_0 = get_ap_roc(test_path_0, label_path)
+    roc_1 = get_ap_roc(test_path_1, label_path)
+    roc_0 = np.array(roc_0, dtype=np.float64)
+    roc_1 = np.array(roc_1, dtype=np.float64)
     fig, ax1 = plt.subplots()
     ax2 = ax1.twinx()
-    ax1.plot(roc[:, 0], roc[:, 1], label='precision', color='r')
+    ax1.plot(roc_0[:, 0], roc_0[:, 1], label='precision_yolov5x', color='r')
+    ax1.plot(roc_1[:, 0], roc_1[:, 1], label='precision_effnet', color='plum')
     ax1.set_xlim(0, 1)
-    ax1.set_ylim(0.9, 1)
+    ax1.set_ylim(0, 1)
     ax1.set_ylabel('Precision')
     ax1.set_xlabel('Recall')
-    ax2.plot(roc[:, 0], roc[:, 2], label='conf', color='b')
-    ax2.set_ylim(0.1, 1)
+    ax2.plot(roc_0[:, 0], roc_0[:, 2], label='conf_yolov5x', color='b')
+    ax2.plot(roc_1[:, 0], roc_1[:, 2], label='conf_effnet', color='g')
+    ax2.set_ylim(0, 1)
     ax2.set_ylabel('Conf')
-    plt.title('YOLOv5x-epoch450-conf0.176')
-    fig.legend(bbox_to_anchor=(0.6, 1.), bbox_transform=ax1.transAxes)
+    plt.title('PR-Curve: AP=0.50')
+    fig.legend(bbox_to_anchor=(0.7, 0.6), bbox_transform=ax1.transAxes)
     plt.show()
 
