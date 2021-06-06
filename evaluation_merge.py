@@ -201,7 +201,7 @@ if __name__ == "__main__":
     roc = np.array(roc, dtype=np.float64)
     fig, ax1 = plt.subplots()
     ax2 = ax1.twinx()
-    ax1.plot(roc[:, 0], roc[:, 1], label='roc', color='r')
+    ax1.plot(roc[:, 0], roc[:, 1], label='precision', color='r')
     ax1.set_xlim(0, 1)
     ax1.set_ylim(0.9, 1)
     ax1.set_ylabel('Precision')
