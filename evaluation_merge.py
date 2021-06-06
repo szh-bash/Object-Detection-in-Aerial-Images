@@ -2,7 +2,7 @@ import os
 import numpy as np
 from shapely.geometry import Polygon
 from math import sqrt
-
+import matplotlib.pyplot as plt
 
 test_path = 'DOTA_demo_view/detection/result_txt/result_before_merge/'
 label_path = 'DOTA_demo_view/labelTxt/'
@@ -157,7 +157,7 @@ if __name__ == "__main__":
                     print(file, x)
             else:
                 if x[-1] < 0.5:
-                    print(file)
+                    print(file, x[-1])
             #         print(gt[file])
             #         print(pred[file])
             #         print(iou_max, x)
@@ -174,21 +174,42 @@ if __name__ == "__main__":
     ap = 0
     last = 1
     conf_min = 1
+    roc = []
     for x in q:
         if x[1]:
             pre += 1
             rec += 1
-            print('rec=%.5f prec=%.5f' % (rec/gt_total, pre/(pre+fp)))
+            # print('rec=%.5f prec=%.5f' % (rec/gt_total, pre/(pre+fp)))
+            roc.append([rec/gt_total, pre/(pre+fp), x[0]])
             if rec <= gt_total:
                 ap += (last+pre/(pre+fp))/2
                 conf_min = x[0]
-                print(x[0])
+                # print(x[0])
         else:
             fp += 1
             last = pre/(pre+fp)
+    if rec < gt_total:
+        roc.append([1, 0, 0])
     print('rec=%.5f prec=%.5f' % (rec/gt_total, pre/(pre+fp)))
     ap /= gt_total
     print('AP-%d: %.5f' % (iou_ap_thresh*100, ap))
     print('Oriented Bounding Boxes: %d' % q.shape[0])
     print('Ground-Truth Total: %d' % gt_total)
     print('Lowest TP-Conf: %.5f' % conf_min)
+
+    # plotting roc-curve
+    roc = np.array(roc, dtype=np.float64)
+    fig, ax1 = plt.subplots()
+    ax2 = ax1.twinx()
+    ax1.plot(roc[:, 0], roc[:, 1], label='roc', color='r')
+    ax1.set_xlim(0, 1)
+    ax1.set_ylim(0.9, 1)
+    ax1.set_ylabel('Precision')
+    ax1.set_xlabel('Recall')
+    ax2.plot(roc[:, 0], roc[:, 2], label='conf', color='b')
+    ax2.set_ylim(0.1, 1)
+    ax2.set_ylabel('Conf')
+    plt.title('YOLOv5x-epoch450-conf0.176')
+    fig.legend(bbox_to_anchor=(0.6, 1.), bbox_transform=ax1.transAxes)
+    plt.show()
+
